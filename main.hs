@@ -120,6 +120,18 @@ intermediateTiles :: Field -> Position -> Position -> [Tile]
 intermediateTiles field src dst =
     map (fieldGet field) (intermediatePositions src dst)
 
+majorDiagonal :: Position -> [Position]
+majorDiagonal (r, c) = [(r0 + i, c0 + i) | i <- [0..high]]
+  where
+    (r0, c0) = (max 0 (r - c), max 0 (c - r))
+    high     = 7 - abs (r - c)
+
+minorDiagonal :: Position -> [Position]
+minorDiagonal (r, c) = [(r0 + i, c0 - i) | i <- [0..high]]
+  where
+    (r0, c0) = (max 0 (r - (7 - c)), 7 - max 0 ((7 - c) - r))
+    high     = 7 - abs (r - (7 - c))
+
 canCapture :: Tile -> Field -> Position -> Bool
 canCapture (Piece player Man) field src =
     or $ do
@@ -136,16 +148,22 @@ canCapture (Piece player Man) field src =
 canCapture piece@(Piece player King) field src@(r, c) =
     or [isJust $ capture piece field src dst | dst <- turnCandidates]
   where
-    turnCandidates = majorDiagonal ++ minorDiagonal
+    turnCandidates = removeTooClose $ majorDiagonal src ++ minorDiagonal src
     removeTooClose = filter (\(r', c') -> 2 < abs (r' - r))
-    majorDiagonal  = removeTooClose [(r + i, c + i) | i <- [0..high]]
-      where
-        (r0, c0) = (max 0 (r - c), max 0 (c - r))
-        high     = max (7 - r) (7 - c)
-    minorDiagonal  = removeTooClose [(r + i, c - i) | i <- [0..high]]
-      where
-        (r0, c0) = (max 0 (r - c), min 7 (c + r))
-        high     = max (7 - r) c
+
+canStep :: Tile -> Field -> Position -> Bool
+canStep (Piece player Man) field (row, col) =
+    or [isOnField position && Empty == fieldGet field position
+       | position <- [(row + dRow, col - 1), (row + dRow, col + 1)]]
+  where
+    dRow = if White == player then -1 else 1
+canStep (Piece player King) field src@(r, c) =
+    any canStepTo stepCandidates
+  where
+    stepCandidates = filter (/= src) $ majorDiagonal src ++ minorDiagonal src
+    canStepTo dst@(r', c') =
+        let intermediate = intermediateTiles field src dst
+        in abs (r' - r) == abs (c' - c) && all (== Empty) intermediate
 
 captureTurns :: Field -> Player -> [Position]
 captureTurns field player = do
@@ -262,6 +280,16 @@ countTiles field =
     step (black, white) (Piece Black _) = (black + 1, white)
     step (black, white) (Piece White _) = (black, white + 1)
 
+noTurns :: Player -> Field -> Bool
+noTurns player field = all haveNoTurns allPositions
+  where
+    allPositions = [(row, col) | row <- [0..7], col <- [0..7]]
+    haveNoTurns position =
+        let piece = fieldGet field position
+            canStep' = canStep piece field position
+            canCapture' = canCapture piece field position
+        in not $ piece `isTileOf` player && (canStep' || canCapture')
+
 play :: GameState -> IO ()
 play state@(GameState player field _) = do
     printField $ field
@@ -269,10 +297,13 @@ play state@(GameState player field _) = do
     case (black, white) of
         (0, _) -> putStrLn $ "White wins!"
         (_, 0) -> putStrLn $ "Black wins!"
-        _      -> do
-            putStrLn $ show player ++ "'s turn"
-            state' <- getTurn state
-            play state'
+        _      ->
+            if noTurns player field
+                then putStrLn $ show (enemy player) ++ " wins!"
+                else do
+                    putStrLn $ show player ++ "'s turn"
+                    state' <- getTurn state
+                    play state'
 
 main :: IO ()
 main = do
