@@ -215,6 +215,7 @@ capture piece@(Piece player Man) field src@(r, c) dst@(r', c')
     captured = ((r + r') `div` 2, (c + c') `div` 2)
 capture piece@(Piece player King) field src@(r, c) dst@(r', c')
     | abs (r' - r) == abs (c' - c)
+    , any (`isTileOf` enemy player) intermediate
     , all (isTileOfEnemyOrEmpty player) intermediate =
         let positions   = intermediatePositions src dst
             step f p    = fieldSet f p Empty
