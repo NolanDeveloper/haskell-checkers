@@ -23,6 +23,7 @@ import Control.Monad
 import Text.Printf
 import qualified Data.Vector as V
 import System.IO
+import Debug.Trace
 
 data Player = Black | White
     deriving (Eq, Show)
@@ -83,6 +84,24 @@ startingField =
     b = Piece Black Man
     w = Piece White Man
 
+testField :: Field
+testField =
+    Field (V.fromList [
+        V.fromList [e, e, e, e, e, e, e, e],
+        V.fromList [e, e, e, e, e, e, e, e],
+        V.fromList [e, e, e, e, e, e, e, e],
+        V.fromList [e, e, e, e, b, e, w, e],
+        V.fromList [e, e, e, e, e, e, e, e],
+        V.fromList [e, e, e, e, b, e, e, e],
+        V.fromList [e, e, e, e, e, e, e, e],
+        V.fromList [e, e,ww, e, e, e, e, e]
+    ])
+  where
+    e = Empty
+    b = Piece Black Man
+    w = Piece White Man
+    ww = Piece White King
+
 isTileOf :: Tile -> Player -> Bool
 isTileOf Empty _ = False
 isTileOf (Piece player' _) player = player' == player
@@ -113,8 +132,14 @@ frontDirection Black = 1
 frontDirection White = (-1)
 
 intermediatePositions :: Position -> Position -> [Position]
+intermediatePositions (r, c) (r', c')
+    | abs (r' - r) <= 2 || abs(c' - c) <= 2
+        = []
 intermediatePositions (r, c) (r', c') =
-    [(r + i, c + i) | i <- [0..abs (r' - r) - 1]]
+    let dr = (r' - r) `div` abs (r' - r)
+        dc = (c' - c) `div` abs (c' - c)
+        n = abs (r' - r) - 1
+    in [(r + dr * i, c + dc * i) | i <- [1..n]]
 
 intermediateTiles :: Field -> Position -> Position -> [Tile]
 intermediateTiles field src dst =
@@ -182,12 +207,12 @@ step (Piece player Man) field src@(r, c) dst@(r', c')
     turns = captureTurns nextField (enemy player)
 step (Piece player King) field src@(r, c) dst@(r', c')
     | abs (r' - r) == abs (c' - c)
-    , intermediate <- intermediateTiles field src dst
     , all (== Empty) intermediate =
         Just $ GameState (enemy player) nextField turns
   where
     nextField = movePiece field src dst
     turns = captureTurns nextField (enemy player)
+    intermediate = intermediateTiles field src dst
 step _ _ _ _ = Nothing
 
 capture :: Tile -> Field -> Position -> Position -> Maybe GameState
@@ -209,9 +234,10 @@ capture piece@(Piece player Man) field src@(r, c) dst@(r', c')
 capture piece@(Piece player King) field src@(r, c) dst@(r', c')
     | abs (r' - r) == abs (c' - c)
     , all (isTileOfEnemyOrEmpty player) intermediate =
-        let step f p    = fieldSet f p Empty
-            field'      = foldl step field (intermediatePositions src dst)
-            nextField   = movePiece field src dst
+        let positions   = intermediatePositions src dst
+            step f p    = fieldSet f p Empty
+            field'      = foldl step field positions
+            nextField   = movePiece field' src dst
             canCapture' = canCapture piece nextField dst
             gameState
                 | canCapture' = GameState player nextField [dst]
