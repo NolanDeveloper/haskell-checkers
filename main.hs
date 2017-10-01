@@ -22,7 +22,6 @@ import Data.Maybe
 import Control.Monad
 import qualified Data.Vector as V
 import System.IO
-import Debug.Trace
 
 data Player = Black | White
     deriving (Eq, Show)
@@ -68,20 +67,38 @@ printField field = do
 
 startingField :: Field
 startingField =
-    Field (V.fromList
-        [ V.fromList [w, e, w, e, w, e, w, e]
-        , V.fromList [e, w, e, w, e, w, e, w]
-        , V.fromList [w, e, w, e, w, e, w, e]
-        , V.fromList [e, e, e, e, e, e, e, e]
-        , V.fromList [e, e, e, e, e, e, e, e]
-        , V.fromList [e, b, e, b, e, b, e, b]
+    Field (V.reverse $ V.fromList
+        [ V.fromList [e, b, e, b, e, b, e, b]
         , V.fromList [b, e, b, e, b, e, b, e]
         , V.fromList [e, b, e, b, e, b, e, b]
+        , V.fromList [e, e, e, e, e, e, e, e]
+        , V.fromList [e, e, e, e, e, e, e, e]
+        , V.fromList [w, e, w, e, w, e, w, e]
+        , V.fromList [e, w, e, w, e, w, e, w]
+        , V.fromList [w, e, w, e, w, e, w, e]
         ])
   where
     e = Empty
     b = Piece Black Man
     w = Piece White Man
+
+testField :: Field
+testField =
+    Field (V.reverse $ V.fromList
+        [ V.fromList [e, e, e, k, e, e, e, b]
+        , V.fromList [b, e, b, e, e, e, e, e]
+        , V.fromList [e, e, e, e, e, e, e, e]
+        , V.fromList [e, e, e, e, e, e, e, e]
+        , V.fromList [e, e, e, e, e, w, e, e]
+        , V.fromList [w, e, w, e, w, e, w, e]
+        , V.fromList [e, w, e, w, e, w, e, w]
+        , V.fromList [w, e, e, e, e, e, e, e]
+        ])
+  where
+    e = Empty
+    b = Piece Black Man
+    w = Piece White Man
+    k = Piece White King
 
 isTileOf :: Tile -> Player -> Bool
 isTileOf Empty _ = False
@@ -115,7 +132,7 @@ frontDirection White = 1
 
 intermediatePositions :: Position -> Position -> [Position]
 intermediatePositions (r, c) (r', c')
-    | abs (r' - r) <= 2 || abs(c' - c) <= 2
+    | abs (r' - r) < 2 || abs(c' - c) < 2
         = []
 intermediatePositions (r, c) (r', c') =
     let dr = (r' - r) `div` abs (r' - r)
@@ -156,7 +173,7 @@ canCapture piece@(Piece player King) field src@(r, c) =
     or [isJust $ capture piece field src dst | dst <- turnCandidates]
   where
     turnCandidates = removeTooClose $ majorDiagonal src ++ minorDiagonal src
-    removeTooClose = filter (\(r', c') -> 2 < abs (r' - r))
+    removeTooClose = filter (\(r', c') -> 2 <= abs (r' - r))
 
 canStep :: Tile -> Field -> Position -> Bool
 canStep (Piece player Man) field (row, col) =
@@ -205,11 +222,10 @@ capture piece@(Piece player Man) field src@(r, c) dst@(r', c')
         let field'      = fieldSet field captured Empty
             nextField   = movePiece field' src dst
             canCapture' = canCapture piece nextField dst
+            turns       = captureTurns nextField (enemy player)
             gameState
                 | canCapture' = GameState player nextField [dst]
                 | otherwise   = GameState (enemy player) nextField turns
-              where
-                turns = captureTurns nextField (enemy player)
         in Just gameState
   where
     captured = ((r + r') `div` 2, (c + c') `div` 2)
@@ -222,11 +238,10 @@ capture piece@(Piece player King) field src@(r, c) dst@(r', c')
             field'      = foldl step field positions
             nextField   = movePiece field' src dst
             canCapture' = canCapture piece nextField dst
+            turns       = captureTurns nextField (enemy player)
             gameState
                 | canCapture' = GameState player nextField [dst]
                 | otherwise   = GameState (enemy player) nextField turns
-              where
-                turns = captureTurns nextField (enemy player)
         in Just gameState
   where
     intermediate = intermediateTiles field src dst
