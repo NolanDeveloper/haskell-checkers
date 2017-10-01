@@ -169,11 +169,12 @@ canCapture (Piece player Man) field src =
                 let a = fieldGet field aPos
                 let b = fieldGet field bPos
                 [a `isTileOf` enemy player && b == Empty]
-canCapture piece@(Piece player King) field src@(r, c) =
+canCapture piece@(Piece _ King) field src@(r, _) =
     or [isJust $ capture piece field src dst | dst <- turnCandidates]
   where
     turnCandidates = removeTooClose $ majorDiagonal src ++ minorDiagonal src
-    removeTooClose = filter (\(r', c') -> 2 <= abs (r' - r))
+    removeTooClose = filter (\(r', _) -> 2 <= abs (r' - r))
+canCapture Empty _ _ = error "canCapture shouldn't be used with Empty tile"
 
 canStep :: Tile -> Field -> Position -> Bool
 canStep (Piece player Man) field (row, col) =
@@ -185,9 +186,12 @@ canStep (Piece player King) field src@(r, c) =
     any canStepTo stepCandidates
   where
     stepCandidates = filter (/= src) $ majorDiagonal src ++ minorDiagonal src
+    isOwnTileOrEmpty t = t `isTileOf` player || t == Empty
     canStepTo dst@(r', c') =
-        let intermediate = intermediateTiles field src dst
-        in abs (r' - r) == abs (c' - c) && all (== Empty) intermediate
+        abs (r' - r) == abs (c' - c) && all isOwnTileOrEmpty intermediate
+      where
+        intermediate = intermediateTiles field src dst
+canStep Empty _ _ = error "canStep shouldn't be used with Empty tile"
 
 captureTurns :: Field -> Player -> [Position]
 captureTurns field player = do
@@ -234,8 +238,8 @@ capture piece@(Piece player King) field src@(r, c) dst@(r', c')
     , any (`isTileOf` enemy player) intermediate
     , all (isTileOfEnemyOrEmpty player) intermediate =
         let positions   = intermediatePositions src dst
-            step f p    = fieldSet f p Empty
-            field'      = foldl step field positions
+            eraseAt f p = fieldSet f p Empty
+            field'      = foldl eraseAt field positions
             nextField   = movePiece field' src dst
             canCapture' = canCapture piece nextField dst
             turns       = captureTurns nextField (enemy player)
@@ -245,12 +249,12 @@ capture piece@(Piece player King) field src@(r, c) dst@(r', c')
         in Just gameState
   where
     intermediate = intermediateTiles field src dst
-    isTileOfEnemyOrEmpty player tile =
-        tile == Empty || tile `isTileOf` enemy player
+    isTileOfEnemyOrEmpty player' tile =
+        tile == Empty || tile `isTileOf` enemy player'
 capture _ _ _ _ = Nothing
 
 orElse :: Maybe a -> Maybe a -> Maybe a
-orElse x@(Just _) y = x
+orElse x@(Just _) _ = x
 orElse _ y          = y
 
 stepOrCapture :: Tile -> Field -> Position -> Position -> Maybe GameState
@@ -299,12 +303,12 @@ getTurn state = do
 
 countTiles :: Field -> (Int, Int)
 countTiles field =
-    foldl step (0, 0) tiles
+    foldl next (0, 0) tiles
   where
     tiles = [fieldGet field (row, col) | row <- [0..7], col <- [0..7]]
-    step amounts Empty = amounts
-    step (black, white) (Piece Black _) = (black + 1, white)
-    step (black, white) (Piece White _) = (black, white + 1)
+    next amounts Empty = amounts
+    next (black, white) (Piece Black _) = (black + 1, white)
+    next (black, white) (Piece White _) = (black, white + 1)
 
 noTurns :: Player -> Field -> Bool
 noTurns player field = all haveNoTurns allPositions
