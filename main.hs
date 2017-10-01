@@ -64,24 +64,6 @@ startingField =
     b = Piece Black Man
     w = Piece White Man
 
-testField :: Field
-testField =
-    Field (V.reverse $ V.fromList
-        [ V.fromList [e, e, e, k, e, e, e, b]
-        , V.fromList [b, e, b, e, e, e, e, e]
-        , V.fromList [e, e, e, e, e, e, e, e]
-        , V.fromList [e, e, e, e, e, e, e, e]
-        , V.fromList [e, e, e, e, e, w, e, e]
-        , V.fromList [w, e, w, e, w, e, w, e]
-        , V.fromList [e, w, e, w, e, w, e, w]
-        , V.fromList [w, e, e, e, e, e, e, e]
-        ])
-  where
-    e = Empty
-    b = Piece Black Man
-    w = Piece White Man
-    k = Piece White King
-
 isTileOf :: Tile -> Player -> Bool
 isTileOf Empty _ = False
 isTileOf (Piece player' _) player = player' == player
