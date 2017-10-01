@@ -1,21 +1,3 @@
-{-
-W - white
-Q - white king
-B - black
-K - black king
-  +-+-+-+-+-+-+-+-+
-8 | |b| |b| |b| |b|
-7 |b| |b| |b| |b| |
-6 | |b| |b| |b| |b|
-5 | | | | | | | | |
-4 | | | | | | | | |
-3 |w| |w| |w| |w| |
-2 | |w| |w| |w| |w|
-1 |w| |w| |w| |w| |
-  +-+-+-+-+-+-+-+-+
-   a b c d e f g h
--}
-
 import Data.Char
 import Data.List
 import Data.Maybe
