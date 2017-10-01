@@ -3,24 +3,23 @@ W - white
 Q - white king
 B - black
 K - black king
-   1 2 3 4 5 6 7 8
   +-+-+-+-+-+-+-+-+
-a | |b| |b| |b| |b|
-b |b| |b| |b| |b| |
-c | |b| |b| |b| |b|
-d | | | | | | | | |
-e | | | | | | | | |
-f |w| |w| |w| |w| |
-g | |w| |w| |w| |w|
-h |w| |w| |w| |w| |
+8 | |b| |b| |b| |b|
+7 |b| |b| |b| |b| |
+6 | |b| |b| |b| |b|
+5 | | | | | | | | |
+4 | | | | | | | | |
+3 |w| |w| |w| |w| |
+2 | |w| |w| |w| |w|
+1 |w| |w| |w| |w| |
   +-+-+-+-+-+-+-+-+
+   a b c d e f g h
 -}
 
 import Data.Char
 import Data.List
 import Data.Maybe
 import Control.Monad
-import Text.Printf
 import qualified Data.Vector as V
 import System.IO
 import Debug.Trace
@@ -56,51 +55,33 @@ fieldSet (Field tiles) (row, col) tile =
 
 printField :: Field -> IO ()
 printField field = do
-    putStrLn "   1 2 3 4 5 6 7 8"
     putStrLn "  +-+-+-+-+-+-+-+-+"
-    forM_ (zip [0..7] "abcdefgh") $ \(i, a) -> do
-        putChar a
+    forM_ [7, 6..0] $ \i -> do
+        putStr $ show (i + 1)
         putStr " |"
         forM_ [0..7] $ \j -> do
             putStr $ show $ fieldGet field (i, j)
             putStr "|"
         putChar '\n'
     putStrLn "  +-+-+-+-+-+-+-+-+"
+    putStrLn "   a b c d e f g h"
 
 startingField :: Field
 startingField =
-    Field (V.fromList [
-        V.fromList [e, b, e, b, e, b, e, b],
-        V.fromList [b, e, b, e, b, e, b, e],
-        V.fromList [e, b, e, b, e, b, e, b],
-        V.fromList [e, e, e, e, e, e, e, e],
-        V.fromList [e, e, e, e, e, e, e, e],
-        V.fromList [w, e, w, e, w, e, w, e],
-        V.fromList [e, w, e, w, e, w, e, w],
-        V.fromList [w, e, w, e, w, e, w, e]
-    ])
+    Field (V.fromList
+        [ V.fromList [w, e, w, e, w, e, w, e]
+        , V.fromList [e, w, e, w, e, w, e, w]
+        , V.fromList [w, e, w, e, w, e, w, e]
+        , V.fromList [e, e, e, e, e, e, e, e]
+        , V.fromList [e, e, e, e, e, e, e, e]
+        , V.fromList [e, b, e, b, e, b, e, b]
+        , V.fromList [b, e, b, e, b, e, b, e]
+        , V.fromList [e, b, e, b, e, b, e, b]
+        ])
   where
     e = Empty
     b = Piece Black Man
     w = Piece White Man
-
-testField :: Field
-testField =
-    Field (V.fromList [
-        V.fromList [e, e, e, e, e, e, e, e],
-        V.fromList [e, e, e, e, e, e, e, e],
-        V.fromList [e, e, e, e, e, e, e, e],
-        V.fromList [e, e, e, e, b, e, w, e],
-        V.fromList [e, e, e, e, e, e, e, e],
-        V.fromList [e, e, e, e, b, e, e, e],
-        V.fromList [e, e, e, e, e, e, e, e],
-        V.fromList [e, e,ww, e, e, e, e, e]
-    ])
-  where
-    e = Empty
-    b = Piece Black Man
-    w = Piece White Man
-    ww = Piece White King
 
 isTileOf :: Tile -> Player -> Bool
 isTileOf Empty _ = False
@@ -114,22 +95,23 @@ isOnField :: Position -> Bool
 isOnField (r, c) = 0 <= r && r < 8 && 0 <= c && c < 8
 
 kingRowOf :: Player -> Int
-kingRowOf White = 7
-kingRowOf Black = 0
+kingRowOf White = 0
+kingRowOf Black = 7
 
 makeKing :: Tile -> Tile
 makeKing (Piece player _) = Piece player King
+makeKing _ = error "Tile is not a piece"
 
 movePiece :: Field -> Position -> Position -> Field
-movePiece field src dst@(r, c) = fieldSet (fieldSet field src Empty) dst tile'
+movePiece field src dst@(r, _) = fieldSet (fieldSet field src Empty) dst tile'
   where
-    tile@(Piece player piece) = fieldGet field src
+    tile@(Piece player _) = fieldGet field src
     shouldBecomeKing = r == kingRowOf (enemy player)
     tile' = if shouldBecomeKing then makeKing tile else tile
 
 frontDirection :: Player -> Int
-frontDirection Black = 1
-frontDirection White = (-1)
+frontDirection Black = (-1)
+frontDirection White = 1
 
 intermediatePositions :: Position -> Position -> [Position]
 intermediatePositions (r, c) (r', c')
@@ -181,7 +163,7 @@ canStep (Piece player Man) field (row, col) =
     or [isOnField position && Empty == fieldGet field position
        | position <- [(row + dRow, col - 1), (row + dRow, col + 1)]]
   where
-    dRow = if White == player then -1 else 1
+    dRow = frontDirection player
 canStep (Piece player King) field src@(r, c) =
     any canStepTo stepCandidates
   where
@@ -284,14 +266,16 @@ getTurn state = do
                 Nothing     -> invalidTurn
                 Just state' -> return state'
   where
-    readTurn [a, b, c, d]
+    readTurn [a, b, c, d, e]
         | Just a' <- a `elemIndex` "abcdefgh"
-        , b' <- digitToInt b - 1
         , b' < 8
-        , Just c' <- c `elemIndex` "abcdefgh"
-        , d' <- digitToInt d - 1
-        , d' < 8 =
-            Just ((a', b'), (c', d'))
+        , '-' == c
+        , Just d' <- d `elemIndex` "abcdefgh"
+        , e' < 8 =
+            Just ((b', a'), (e', d'))
+      where
+        b' = digitToInt b - 1
+        e' = digitToInt e - 1
     readTurn _ = Nothing
     invalidTurn = do
         putStrLn "Invalid turn"
