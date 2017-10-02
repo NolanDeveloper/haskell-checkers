@@ -1,7 +1,7 @@
+import Data.Ord
 import Data.Char
 import Data.List
 import Data.Maybe
-import Control.Monad
 import qualified Data.Vector as V
 import System.IO
 
@@ -34,18 +34,25 @@ fieldSet :: Field -> Position -> Tile -> Field
 fieldSet (Field tiles) (row, col) tile =
     Field $ tiles V.// [(row, (tiles V.! row) V.// [(col, tile)])]
 
-printField :: Field -> IO ()
-printField field = do
-    putStrLn "  +-+-+-+-+-+-+-+-+"
-    forM_ [7, 6..0] $ \i -> do
-        putStr $ show (i + 1)
-        putStr " |"
-        forM_ [0..7] $ \j -> do
-            putStr $ show $ fieldGet field (i, j)
-            putStr "|"
-        putChar '\n'
-    putStrLn "  +-+-+-+-+-+-+-+-+"
-    putStrLn "   a b c d e f g h"
+instance Show Field where
+    show field =
+        "  +-+-+-+-+-+-+-+-+\n"
+        ++ concatFor [7, 6..0] (\i ->
+            show (i + 1) ++ " |"
+            ++ concatFor [0..7] (\j ->
+                show (fieldGet field (i, j))
+                ++ "|")
+            ++ "\n")
+        ++ "  +-+-+-+-+-+-+-+-+\n"
+        ++ "   a b c d e f g h\n"
+      where
+        concatFor = flip concatMap
+
+instance Show GameState where
+    show (GameState player field obligatoryPositions) =
+        show field
+        ++ show player ++ "'s turn\n"
+        ++ "obligatories: " ++ show obligatoryPositions ++ "\n"
 
 startingField :: Field
 startingField =
@@ -120,48 +127,12 @@ minorDiagonal (r, c) = [(r0 + i, c0 - i) | i <- [0..high]]
     (r0, c0) = (max 0 (r - (7 - c)), 7 - max 0 ((7 - c) - r))
     high     = 7 - abs (r - (7 - c))
 
-canCapture :: Tile -> Field -> Position -> Bool
-canCapture (Piece player Man) field src =
-    or $ do
-        move <- [\(r, c) -> (r - 1, c - 1), \(r, c) -> (r - 1, c + 1),
-                 \(r, c) -> (r + 1, c + 1), \(r, c) -> (r + 1, c - 1)]
-        let aPos = move src
-        let bPos = move aPos
-        if not $ isOnField bPos
-            then []
-            else do
-                let a = fieldGet field aPos
-                let b = fieldGet field bPos
-                [a `isTileOf` enemy player && b == Empty]
-canCapture piece@(Piece _ King) field src@(r, _) =
-    or [isJust $ capture piece field src dst | dst <- turnCandidates]
-  where
-    turnCandidates = removeTooClose $ majorDiagonal src ++ minorDiagonal src
-    removeTooClose = filter (\(r', _) -> 2 <= abs (r' - r))
-canCapture Empty _ _ = error "canCapture shouldn't be used with Empty tile"
-
-canStep :: Tile -> Field -> Position -> Bool
-canStep (Piece player Man) field (row, col) =
-    or [isOnField position && Empty == fieldGet field position
-       | position <- [(row + dRow, col - 1), (row + dRow, col + 1)]]
-  where
-    dRow = frontDirection player
-canStep (Piece player King) field src@(r, c) =
-    any canStepTo stepCandidates
-  where
-    stepCandidates = filter (/= src) $ majorDiagonal src ++ minorDiagonal src
-    isOwnTileOrEmpty t = t `isTileOf` player || t == Empty
-    canStepTo dst@(r', c') =
-        abs (r' - r) == abs (c' - c) && all isOwnTileOrEmpty intermediate
-      where
-        intermediate = intermediateTiles field src dst
-canStep Empty _ _ = error "canStep shouldn't be used with Empty tile"
-
 captureTurns :: Field -> Player -> [Position]
 captureTurns field player = do
     position <- [(row, col) | row <- [0..7], col <- [0..7]]
     let tile = fieldGet field position
-    if not $ tile `isTileOf` player && canCapture tile field position
+    let canCapture = not $ null $ availableCaptures field position
+    if not $ tile `isTileOf` player && canCapture
         then []
         else [position]
 
@@ -174,22 +145,25 @@ step (Piece player Man) field src@(r, c) dst@(r', c')
     turns = captureTurns nextField (enemy player)
 step (Piece player King) field src@(r, c) dst@(r', c')
     | abs (r' - r) == abs (c' - c)
-    , all (== Empty) intermediate =
+    , all isEmptyOrPlayers intermediate
+    , fieldGet field dst == Empty =
         Just $ GameState (enemy player) nextField turns
   where
+    isEmptyOrPlayers tile = tile `isTileOf` player || tile == Empty
     nextField = movePiece field src dst
     turns = captureTurns nextField (enemy player)
     intermediate = intermediateTiles field src dst
 step _ _ _ _ = Nothing
 
 capture :: Tile -> Field -> Position -> Position -> Maybe GameState
-capture piece@(Piece player Man) field src@(r, c) dst@(r', c')
+capture (Piece player Man) field src@(r, c) dst@(r', c')
     | abs (r' - r) == abs (c' - c)
     , 2 == abs (r' - r)
-    , fieldGet field captured `isTileOf` enemy player =
+    , fieldGet field captured `isTileOf` enemy player
+    , fieldGet field dst == Empty =
         let field'      = fieldSet field captured Empty
             nextField   = movePiece field' src dst
-            canCapture' = canCapture piece nextField dst
+            canCapture' = not $ null $ availableCaptures nextField dst
             turns       = captureTurns nextField (enemy player)
             gameState
                 | canCapture' = GameState player nextField [dst]
@@ -197,15 +171,16 @@ capture piece@(Piece player Man) field src@(r, c) dst@(r', c')
         in Just gameState
   where
     captured = ((r + r') `div` 2, (c + c') `div` 2)
-capture piece@(Piece player King) field src@(r, c) dst@(r', c')
+capture (Piece player King) field src@(r, c) dst@(r', c')
     | abs (r' - r) == abs (c' - c)
     , any (`isTileOf` enemy player) intermediate
-    , all (isTileOfEnemyOrEmpty player) intermediate =
+    , all (isTileOfEnemyOrEmpty player) intermediate
+    , fieldGet field dst == Empty =
         let positions   = intermediatePositions src dst
             eraseAt f p = fieldSet f p Empty
             field'      = foldl eraseAt field positions
             nextField   = movePiece field' src dst
-            canCapture' = canCapture piece nextField dst
+            canCapture' = not $ null $ availableCaptures nextField dst
             turns       = captureTurns nextField (enemy player)
             gameState
                 | canCapture' = GameState player nextField [dst]
@@ -274,32 +249,178 @@ countTiles field =
     next (black, white) (Piece Black _) = (black + 1, white)
     next (black, white) (Piece White _) = (black, white + 1)
 
-noTurns :: Player -> Field -> Bool
-noTurns player field = all haveNoTurns allPositions
-  where
-    allPositions = [(row, col) | row <- [0..7], col <- [0..7]]
-    haveNoTurns position =
-        let piece = fieldGet field position
-            canStep' = canStep piece field position
-            canCapture' = canCapture piece field position
-        in not $ piece `isTileOf` player && (canStep' || canCapture')
+availableSteps :: Field -> Position -> [Position]
+availableSteps field src@(row, col)
+    | Piece player Man <- fieldGet field src =
+        let dRow = frontDirection player
+            canStepTo pos = isOnField pos && Empty == fieldGet field pos
+        in filter canStepTo [(row + dRow, col - 1), (row + dRow, col + 1)]
+availableSteps field src
+    | Piece player King <- fieldGet field src =
+        let emptyOrPlayers t = t `isTileOf` player || t == Empty
+            diagonals = majorDiagonal src ++ minorDiagonal src
+            stepCandidates = filter (/= src) diagonals
+            canStepTo dst =
+                let between = intermediateTiles field src dst
+                in all emptyOrPlayers between && fieldGet field dst == Empty
+        in filter canStepTo stepCandidates
+availableSteps _ _ =
+    error "availableSteps shouldn't be used on Empty tile"
 
-play :: GameState -> IO ()
-play state@(GameState player field _) = do
-    printField $ field
-    let (black, white) = countTiles field
-    case (black, white) of
-        (0, _) -> putStrLn $ "White wins!"
-        (_, 0) -> putStrLn $ "Black wins!"
-        _      ->
-            if noTurns player field
-                then putStrLn $ show (enemy player) ++ " wins!"
-                else do
-                    putStrLn $ show player ++ "'s turn"
-                    state' <- getTurn state
-                    play state'
+middle :: Position -> Position -> Position
+middle (r, c) (r', c') = ((r + r') `div` 2, (c + c') `div` 2)
+
+testField :: Field
+testField =
+    Field $ V.reverse $ V.fromList
+        [ V.fromList [ e, b, e, b, e, b, e, ww ],
+          V.fromList [ b, e, b, e, b, e, e, e ],
+          V.fromList [ e, b, e, b, e, e, e, b ],
+          V.fromList [ w, e, e, e, b, e, e, e ],
+          V.fromList [ e, e, e, e, e, e, e, e ],
+          V.fromList [ w, e, w, e, w, e, e, e ],
+          V.fromList [ e, e, e, w, e, w, e, w ],
+          V.fromList [ w, e, w, e, w, e, w, e ]
+        ]
+  where
+    e = Empty
+    b = Piece Black Man
+    w = Piece White Man
+    ww = Piece White King
+
+availableCaptures :: Field -> Position -> [Position]
+availableCaptures field src@(r, c)
+    | piece@(Piece _ Man) <- fieldGet field src =
+        filter (\dst -> isJust $ capture piece field src dst) turnCandidates
+  where
+    turnCandidates =
+        filter isOnField [(r - 2, c - 2), (r - 2, c + 2),
+                          (r + 2, c + 2), (r + 2, c - 2)]
+availableCaptures field src@(r, _)
+    | piece@(Piece _ King) <- fieldGet field src =
+        filter (\dst -> isJust $ capture piece field src dst) turnCandidates
+  where
+    turnCandidates = removeTooClose $ majorDiagonal src ++ minorDiagonal src
+    removeTooClose = filter (\(r', _) -> 2 <= abs (r' - r))
+availableCaptures _ _ =
+    error "availableCaptures shouldn't be used on Empty tile"
+
+availableTurns :: GameState -> [(Position, Position)]
+availableTurns (GameState player field []) = do
+    row <- [0..7]
+    col <- [0..7]
+    let position = (row, col)
+    let piece = fieldGet field position
+    let steps = availableSteps field position
+    let captures = availableCaptures field position
+    if piece `isTileOf` player
+        then map ((,) position) $ steps ++ captures
+        else []
+availableTurns (GameState _ field obligatoryPositions) = do
+    position <- obligatoryPositions
+    map ((,) position) $ availableCaptures field position
+
+maxDepth :: Int
+maxDepth = 4
+
+heuristic :: GameState -> Int
+heuristic (GameState player field _) =
+    foldl next 0 [(row, col) | row <- [0..7], col <- [0..7]]
+  where
+    next acc pos@(_, c)
+        | (Piece player' Man) <- fieldGet field pos
+        , player == player'
+        , c `elem` [0, 7]
+            = let steps = length $ availableSteps field pos
+                  captures = length $ availableCaptures field pos
+              in acc + steps + 2 * captures + 2
+    next acc pos
+        | (Piece player' Man) <- fieldGet field pos
+        , player == player'
+            = let steps = length $ availableSteps field pos
+                  captures = length $ availableCaptures field pos
+              in acc + steps + 2 * captures + 1
+    next acc pos
+        | (Piece player' King) <- fieldGet field pos
+        , player == player'
+            = let steps = length $ availableSteps field pos
+                  captures = length $ availableCaptures field pos
+              in acc + steps + 2 * captures + 5
+    next acc _ = acc
+
+assess :: Int -> Player -> Bool -> Int -> Int -> GameState -> Int
+assess depth player maximizing alpha beta state =
+    case (depth, winner state) of
+        (0, _) -> heuristic state
+        (_, Just player') ->
+            if player' == player then maxBound else minBound
+        _                   ->
+            if maximizing
+                then go minBound alpha childStates
+                else go minBound alpha childStates
+  where
+    turn' (src, dst) = fromJust $ turn state src dst
+    childStates = map turn' $ availableTurns state
+    minOrMax = if maximizing then max else min
+    go v _ [] = v
+    go v alpha' _ | beta <= alpha' = v
+    go v alpha' (state' : states) =
+        let v' = assess (depth - 1) player (not maximizing) alpha' beta state'
+        in go (minOrMax v v') (minOrMax alpha' v') states
+
+aiNextStep :: GameState -> (Position, Position)
+aiNextStep state@(GameState player _ []) =
+    maximumBy (comparing assess') $ availableTurns state
+  where
+    alpha = minBound :: Int
+    beta = maxBound :: Int
+    assess' (src, dst) =
+        let nextState = fromJust $ turn state src dst
+        in assess maxDepth player False alpha beta nextState
+aiNextStep state@(GameState player field obligatoryPositions) =
+    maximumBy (comparing assess') turns
+  where
+    alpha = minBound :: Int
+    beta = maxBound :: Int
+    assess' (src, dst) =
+        let nextState = fromJust $ turn state src dst
+        in assess maxDepth player False alpha beta nextState
+    availableCaptures' pos = map ((,) pos) $ availableCaptures field pos
+    turns = concatMap availableCaptures' obligatoryPositions
+
+winner :: GameState -> Maybe Player
+winner state@(GameState player field _) =
+    case countTiles field of
+        (0, _)       -> Just White
+        (_, 0)       -> Just Black
+        _ | noTurns  -> Just $ enemy player
+        _            -> Nothing
+  where
+    noTurns = null $ availableTurns state
+
+type Actor = GameState -> IO GameState
+
+humanActor :: GameState -> IO GameState
+humanActor state = getTurn state
+
+computerActor :: GameState -> IO GameState
+computerActor state = do
+    let (src, dst) = aiNextStep state
+    return $ fromJust $ turn state src dst
+
+play :: Actor -> Actor -> GameState -> IO ()
+play black white state@(GameState player field _) = do
+    print field
+    case winner state of
+        Just player' -> putStrLn $ show player' ++ " wins!"
+        Nothing      -> do
+            putStrLn $ show player ++ "'s turn"
+            state' <- playerAction state
+            play black white state'
+  where
+    playerAction = if Black == player then black else white
 
 main :: IO ()
 main = do
     hSetBuffering stdin LineBuffering
-    play (GameState White startingField [])
+    play humanActor computerActor (GameState White startingField [])
