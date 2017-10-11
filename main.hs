@@ -103,13 +103,12 @@ frontDirection White = 1
 
 intermediatePositions :: Position -> Position -> [Position]
 intermediatePositions (r, c) (r', c')
-    | abs (r' - r) < 2 || abs(c' - c) < 2
-        = []
-intermediatePositions (r, c) (r', c') =
-    let dr = (r' - r) `div` abs (r' - r)
-        dc = (c' - c) `div` abs (c' - c)
-        n = abs (r' - r) - 1
-    in [(r + dr * i, c + dc * i) | i <- [1..n]]
+    | abs (r' - r) < 2 || abs(c' - c) < 2 = []
+    | otherwise = 
+        let dr = (r' - r) `div` abs (r' - r)
+            dc = (c' - c) `div` abs (c' - c)
+            n = abs (r' - r) - 1
+        in [(r + dr * i, c + dc * i) | i <- [1..n]]
 
 intermediateTiles :: Field -> Position -> Position -> [Tile]
 intermediateTiles field src dst =
@@ -232,10 +231,11 @@ getTurn state = do
         , Just d' <- d `elemIndex` "abcdefgh"
         , e' < 8 =
             Just ((b', a'), (e', d'))
+        | otherwise = 
+            Nothing
       where
         b' = digitToInt b - 1
         e' = digitToInt e - 1
-    readTurn _ = Nothing
     invalidTurn = do
         putStrLn "Invalid turn"
         getTurn state
@@ -255,7 +255,6 @@ availableSteps field src@(row, col)
         let dRow = frontDirection player
             canStepTo pos = isOnField pos && Empty == fieldGet field pos
         in filter canStepTo [(row + dRow, col - 1), (row + dRow, col + 1)]
-availableSteps field src
     | Piece player King <- fieldGet field src =
         let emptyOrPlayers t = t `isTileOf` player || t == Empty
             diagonals = majorDiagonal src ++ minorDiagonal src
@@ -264,46 +263,24 @@ availableSteps field src
                 let between = intermediateTiles field src dst
                 in all emptyOrPlayers between && fieldGet field dst == Empty
         in filter canStepTo stepCandidates
-availableSteps _ _ =
-    error "availableSteps shouldn't be used on Empty tile"
+    | otherwise = error "availableSteps shouldn't be used on Empty tile"
 
 middle :: Position -> Position -> Position
 middle (r, c) (r', c') = ((r + r') `div` 2, (c + c') `div` 2)
 
-testField :: Field
-testField =
-    Field $ V.reverse $ V.fromList
-        [ V.fromList [ e, b, e, b, e, b, e, ww ],
-          V.fromList [ b, e, b, e, b, e, e, e ],
-          V.fromList [ e, b, e, b, e, e, e, b ],
-          V.fromList [ w, e, e, e, b, e, e, e ],
-          V.fromList [ e, e, e, e, e, e, e, e ],
-          V.fromList [ w, e, w, e, w, e, e, e ],
-          V.fromList [ e, e, e, w, e, w, e, w ],
-          V.fromList [ w, e, w, e, w, e, w, e ]
-        ]
-  where
-    e = Empty
-    b = Piece Black Man
-    w = Piece White Man
-    ww = Piece White King
-
 availableCaptures :: Field -> Position -> [Position]
 availableCaptures field src@(r, c)
     | piece@(Piece _ Man) <- fieldGet field src =
-        filter (\dst -> isJust $ capture piece field src dst) turnCandidates
-  where
-    turnCandidates =
-        filter isOnField [(r - 2, c - 2), (r - 2, c + 2),
-                          (r + 2, c + 2), (r + 2, c - 2)]
-availableCaptures field src@(r, _)
+        let turnCandidates =
+                filter isOnField [(r - 2, c - 2), (r - 2, c + 2),
+                                  (r + 2, c + 2), (r + 2, c - 2)]
+        in filter (\dst -> isJust $ capture piece field src dst) turnCandidates
     | piece@(Piece _ King) <- fieldGet field src =
-        filter (\dst -> isJust $ capture piece field src dst) turnCandidates
-  where
-    turnCandidates = removeTooClose $ majorDiagonal src ++ minorDiagonal src
-    removeTooClose = filter (\(r', _) -> 2 <= abs (r' - r))
-availableCaptures _ _ =
-    error "availableCaptures shouldn't be used on Empty tile"
+        let diagonals = majorDiagonal src ++ minorDiagonal src
+            turnCandidates = removeTooClose diagonals
+            removeTooClose = filter (\(r', _) -> 2 <= abs (r' - r))
+        in filter (\dst -> isJust $ capture piece field src dst) turnCandidates
+    | otherwise = error "availableCaptures shouldn't be used on Empty tile"
 
 availableTurns :: GameState -> [(Position, Position)]
 availableTurns (GameState player field []) = do
@@ -330,23 +307,21 @@ heuristic (GameState player field _) =
     next acc pos@(_, c)
         | (Piece player' Man) <- fieldGet field pos
         , player == player'
-        , c `elem` [0, 7]
-            = let steps = length $ availableSteps field pos
-                  captures = length $ availableCaptures field pos
-              in acc + steps + 2 * captures + 2
-    next acc pos
+        , c `elem` [0, 7] = 
+            let steps = length $ availableSteps field pos
+                captures = length $ availableCaptures field pos
+            in acc + steps + 2 * captures + 2
         | (Piece player' Man) <- fieldGet field pos
-        , player == player'
-            = let steps = length $ availableSteps field pos
-                  captures = length $ availableCaptures field pos
-              in acc + steps + 2 * captures + 1
-    next acc pos
+        , player == player' = 
+            let steps = length $ availableSteps field pos
+                captures = length $ availableCaptures field pos
+            in acc + steps + 2 * captures + 1
         | (Piece player' King) <- fieldGet field pos
-        , player == player'
-            = let steps = length $ availableSteps field pos
-                  captures = length $ availableCaptures field pos
-              in acc + steps + 2 * captures + 5
-    next acc _ = acc
+        , player == player' =
+            let steps = length $ availableSteps field pos
+                captures = length $ availableCaptures field pos
+            in acc + steps + 2 * captures + 5
+        | otherwise = acc
 
 assess :: Int -> Player -> Bool -> Int -> Int -> GameState -> Int
 assess depth player maximizing alpha beta state =
@@ -354,7 +329,7 @@ assess depth player maximizing alpha beta state =
         (0, _) -> heuristic state
         (_, Just player') ->
             if player' == player then maxBound else minBound
-        _                   ->
+        _                 ->
             if maximizing
                 then go minBound alpha childStates
                 else go minBound alpha childStates
@@ -423,4 +398,4 @@ play black white state@(GameState player field _) = do
 main :: IO ()
 main = do
     hSetBuffering stdin LineBuffering
-    play humanActor computerActor (GameState White startingField [])
+    play computerActor computerActor (GameState White startingField [])
