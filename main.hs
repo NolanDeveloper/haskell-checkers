@@ -104,7 +104,7 @@ frontDirection White = 1
 intermediatePositions :: Position -> Position -> [Position]
 intermediatePositions (r, c) (r', c')
     | abs (r' - r) < 2 || abs(c' - c) < 2 = []
-    | otherwise = 
+    | otherwise =
         let dr = (r' - r) `div` abs (r' - r)
             dc = (c' - c) `div` abs (c' - c)
             n = abs (r' - r) - 1
@@ -231,7 +231,7 @@ getTurn state = do
         , Just d' <- d `elemIndex` "abcdefgh"
         , e' < 8 =
             Just ((b', a'), (e', d'))
-        | otherwise = 
+        | otherwise =
             Nothing
       where
         b' = digitToInt b - 1
@@ -307,12 +307,12 @@ heuristic (GameState player field _) =
     next acc pos@(_, c)
         | (Piece player' Man) <- fieldGet field pos
         , player == player'
-        , c `elem` [0, 7] = 
+        , c `elem` [0, 7] =
             let steps = length $ availableSteps field pos
                 captures = length $ availableCaptures field pos
             in acc + steps + 2 * captures + 2
         | (Piece player' Man) <- fieldGet field pos
-        , player == player' = 
+        , player == player' =
             let steps = length $ availableSteps field pos
                 captures = length $ availableCaptures field pos
             in acc + steps + 2 * captures + 1
