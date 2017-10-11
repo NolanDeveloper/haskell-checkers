@@ -178,7 +178,7 @@ capture (Piece player King) field src@(r, c) dst@(r', c')
     , fieldGet field dst == Empty =
         let positions   = intermediatePositions src dst
             eraseAt f p = fieldSet f p Empty
-            field'      = foldl eraseAt field positions
+            field'      = foldl' eraseAt field positions
             nextField   = movePiece field' src dst
             canCapture' = not $ null $ availableCaptures nextField dst
             turns       = captureTurns nextField (enemy player)
@@ -242,7 +242,7 @@ getTurn state = do
 
 countTiles :: Field -> (Int, Int)
 countTiles field =
-    foldl next (0, 0) tiles
+    foldl' next (0, 0) tiles
   where
     tiles = [fieldGet field (row, col) | row <- [0..7], col <- [0..7]]
     next amounts Empty = amounts
@@ -321,11 +321,11 @@ availableTurns (GameState _ field obligatoryPositions) = do
     map ((,) position) $ availableCaptures field position
 
 maxDepth :: Int
-maxDepth = 4
+maxDepth = 3
 
 heuristic :: GameState -> Int
 heuristic (GameState player field _) =
-    foldl next 0 [(row, col) | row <- [0..7], col <- [0..7]]
+    foldl' next 0 [(row, col) | row <- [0..7], col <- [0..7]]
   where
     next acc pos@(_, c)
         | (Piece player' Man) <- fieldGet field pos
